@@ -1,11 +1,12 @@
+
 #!/bin/bash
 
 # Possible parameters
 WORKING_FOLDER="$HOME/.openstack-install"
 [ ! -d "$WORKING_FOLDER" ] && mkdir -p "$WORKING_FOLDER"
 STEP=0
-MANAGEMENT_NETWORK=192.168.10.0/24
-MANAGEMENT_IP=192.168.10.100
+MANAGEMENT_NETWORK= #192.168.10.0/24
+MANAGEMENT_IP= #192.168.10.100
 PASSWD_FILE="$WORKING_FOLDER/passwd.txt"
 QUIET=false
 QUIET_APT=true
@@ -13,19 +14,48 @@ NETWORK_SELFSERVICE=true
 PROVIDER_INTERFACE_NAME=eno3
 DNS_SERVERS=
 SIMPLE_PASSWDS=true
-CINDER_DEV=/dev/vdb
 
 ##################################################################
 # START
 
+function p_info() {
+	echo "$@" >&1
+}
+
+# An array of undo commands
+_UNDO=()
+function undo() {
+	_UNDO=( "$*" "${_UNDO[@]}" )
+}
+
+# A wrapper to create a file with some content, and include the undo line. It enables to automate the
+# inclusion of the comments for the automated install
+function genfile() {
+	local fname="$1"
+	shift
+	backupfile "$fname"
+	if [ "$1" == "-a" ]; then
+		shift
+		cat >> "$fname" <<<"${GENERATED_COMMENT}
+$*"
+	else
+		cat > "$fname" <<<"${GENERATED_COMMENT}
+$*"
+	fi
+}
+# A wrapper for mysql, to be able to include mysql options
+function _mysql() {
+	mysql -u root <<< "$1"
+}
+
 if ((STEP<=0)); then
 p_info "installing and configuring dependencies"
-_apt update
-_apt -y dist-upgrade
-_aptinstall software-properties-common
-add-apt-repository -y cloud-archive:rocky > /dev/null 2> /dev/null
-_aptinstall chrony mariadb-server python-pymysql python-openstackclient rabbitmq-server memcached python-memcache etcd
-undo add-apt-repository -y -r cloud-archive:rocky
+apt update
+apt -y dist-upgrade
+apt install software-properties-common
+add-apt-repository -y cloud-archive:yoga > /dev/null 2> /dev/null
+apt install chrony mariadb-server python3-pymysql python3-openstackclient rabbitmq-server memcached python3-memcache etcd
+undo add-apt-repository -y -r cloud-archive:yoga
 
 p_info "configuring ntp"
 genfile /etc/chrony/chrony.conf -a "allow ${MANAGEMENT_NETWORK}"
@@ -46,7 +76,7 @@ p_info "configuring rabbitmq"
 rabbitmqctl add_user openstack "$RABBIT_PASS"
 rabbitmqctl set_permissions openstack ".*" ".*" ".*"
 
-sed -i 's/^[ \t]*\(-l .*\)$/# commented by OS Rocky automated install \n# \1/g' /etc/memcached.conf
+sed -i 's/^[ \t]*\(-l .*\)$/# commented by OS Yoga automated install \n# \1/g' /etc/memcached.conf
 genfile /etc/memcached.conf -a "-l $MANAGEMENT_IP"
 service memcached restart
 
@@ -75,7 +105,7 @@ DROP USER '"'"'keystone'"'"'@'"'"'%'"'"';"'
 fi
 
 if ((STEP<=2)); then
-_aptinstall keystone apache2 libapache2-mod-wsgi
+apt install keystone apache2 libapache2-mod-wsgi
 
 genfile /etc/keystone/keystone.conf "\
 [DEFAULT]
@@ -90,9 +120,8 @@ fi
 
 if ((STEP<=3)); then
 p_info "populating de identity service database"
-# si falla aqui, probablemente sea porque hay un problema con mysql (igual no esta
-#   bien puesta la IP privada asociada a controller
-su keystone -s /bin/sh -c 'keystone-manage db_sync'
+# Populate the Identity service database
+su -s /bin/sh -c "keystone-manage db_sync" keystone
 
 p_info "initialize kernet key repository"
 keystone-manage fernet_setup --keystone-user keystone --keystone-group keystone
@@ -143,6 +172,7 @@ export OS_IDENTITY_API_VERSION=3
 export OS_IMAGE_API_VERSION=2"
 
 	p_info "creating the demo project, user and role"
+	openstack domain create --description "An Example Domain" example
 	openstack project create --domain default --description "Demo Project" myproject
 	openstack user create --domain default --password "${MYUSER_PASS}"
 	openstack role create myrole
@@ -152,7 +182,7 @@ fi # INSTALL_DEMOPROJECT
 fi # INSTALL_KEYSTONE
 
 
-
+## CONFIG GLANCE
 if ((STEP<=5)); then
 	source admin-openrc
 	p_info "creating database for glance"
@@ -175,17 +205,15 @@ DROP USER '"'"'glance'"'"'@'"'"'%'"'"'"'
 	undo "# REMOVE GLANCE ENDPOINTS IN KEYSTONE"
 fi
 
+## INSTALL GLANCE
 if ((STEP<=6)); then
 	p_info "installing glance"
-	_aptinstall glance
-
-	p_info "correcting glance bug"
-	mv /etc/glance/glance/rootwrap.* /etc/glance/ 2> /dev/null
+	apt install glance
 
 	genfile /etc/glance/glance-api.conf "\
 [database]
 connection = mysql+pymysql://glance:$GLANCE_DBPASS@controller/glance
-backend = sqlalchemy
+
 [image_format]
 disk_formats = ami,ari,aki,vhd,vhdx,vmdk,raw,qcow2,vdi,iso,ploop.root-tar
 [keystone_authtoken]
@@ -200,27 +228,22 @@ username = glance
 password = $GLANCE_PASS
 [paste_deploy]
 flavor = keystone
+[oslo_limit]
+auth_url = http://controller:5000
+auth_type = password
+user_domain_id = default
+username = MY_SERVICE
+system_scope = all
+password = MY_PASSWORD
+endpoint_id = ENDPOINT_ID
+region_name = RegionOne
 [glance_store]
 stores = file,http
 default_store = file
 filesystem_store_datadir = /var/lib/glance/images/"
 
-	genfile /etc/glance/glance-registry.conf "\
-[database]
-connection = mysql+pymysql://glance:$GLANCE_DBPASS@controller/glance
-backend = sqlalchemy
-[keystone_authtoken]
-www_authenticate_uri = http://controller:5000
-auth_url = http://controller:5000
-memcached_servers = controller:11211
-auth_type = password
-project_domain_name = Default
-user_domain_name = Default
-project_name = service
-username = glance
-password = $GLANCE_PASS
-[paste_deploy]
-flavor = keystone"
+	# MY_SERVICE account has reader access to system-scope resources
+	openstack role add --user MY_SERVICE --user-domain Default --system all reader
 
 	su -s /bin/sh -c "glance-manage db_sync" glance
 	service glance-registry restart
