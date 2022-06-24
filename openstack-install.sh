@@ -1,4 +1,3 @@
-
 #!/bin/bash
 
 # Possible parameters
@@ -43,6 +42,7 @@ $*"
 $*"
 	fi
 }
+
 # A wrapper for mysql, to be able to include mysql options
 function _mysql() {
 	mysql -u root <<< "$1"
@@ -257,29 +257,82 @@ if ((STEP<=7)); then
 	undo openstack image delete "cirros"
 fi
 
+# CONFIG INSTALL PLACEMENT
 if ((STEP<=8)); then
 	source admin-openrc
+	p_info "creating database for placement"
+	mysql "CREATE DATABASE placement;
+GRANT ALL PRIVILEGES ON placement.* TO 'placement'@'localhost' IDENTIFIED BY '$PLACEMENT_DBPASS';
+GRANT ALL PRIVILEGES ON placement.* TO 'placement'@'%' IDENTIFIED BY '$PLACEMENT_DBPASS';"
+	undo 'mysql -u root <<< "DROP DATABASE placement;
+	DROP USER '"'"'placement'"'"'@'"'"'localhost'"'"';
+	DROP USER '"'"'placement'"'"'@'"'"'%'"'"'"'
+
+	p_info "creating placement user and service"
+        openstack user create --domain default --password "$PLACEMENT_PASS" placement
+        openstack role add --project service --user placement admin
+        openstack service create --name placement --description "Placement API" placement
+        undo openstack user delete placement
+        undo openstack service delete placement
+
+        p_info "creating placement endpoints"
+        openstack endpoint create --region RegionOne placement public http://controller:8778
+        openstack endpoint create --region RegionOne placement internal http://controller:8778
+        openstack endpoint create --region RegionOne placement admin http://controller:8778
+        undo "# REMOVE PLACEMENT ENDPOINTS"
+
+fi
+
+# INSTALL PLACEMENT 
+if ((STEP<=9)); then
+        p_info "installing placement"
+        apt install if ((STEP<=6)); then
+        p_info "installing glance"
+        apt install placement-api
+
+        genfile /etc/placement/placement.conf "\
+[placement_database]
+# ...
+connection = mysql+pymysql://placement:PLACEMENT_DBPASS@controller/placement
+[api]
+# ...
+auth_strategy = keystone
+
+[keystone_authtoken]
+# ...
+auth_url = http://controller:5000/v3
+memcached_servers = controller:11211
+auth_type = password
+project_domain_name = Default
+user_domain_name = Default
+project_name = service
+username = placement
+password = PLACEMENT_PASS"
+
+		# populate placement database 
+		su -s /bin/sh -c "placement-manage db sync" placement
+		service apache2 restart
+fi
+
+if ((STEP<=10)); then
+	source admin-openrc
 	p_info "creating database for nova"
-	_mysql "CREATE DATABASE nova_api;
+	mysql "CREATE DATABASE nova_api;
 CREATE DATABASE nova;
 CREATE DATABASE nova_cell0;
-CREATE DATABASE placement;
 GRANT ALL PRIVILEGES ON nova_api.* TO 'nova'@'localhost' IDENTIFIED BY '$NOVA_DBPASS';
 GRANT ALL PRIVILEGES ON nova_api.* TO 'nova'@'%' IDENTIFIED BY '$NOVA_DBPASS';
 GRANT ALL PRIVILEGES ON nova.* TO 'nova'@'localhost' IDENTIFIED BY '$NOVA_DBPASS';
 GRANT ALL PRIVILEGES ON nova.* TO 'nova'@'%' IDENTIFIED BY '$NOVA_DBPASS';
 GRANT ALL PRIVILEGES ON nova_cell0.* TO 'nova'@'localhost' IDENTIFIED BY '$NOVA_DBPASS';
 GRANT ALL PRIVILEGES ON nova_cell0.* TO 'nova'@'%' IDENTIFIED BY '$NOVA_DBPASS';
-GRANT ALL PRIVILEGES ON placement.* TO 'placement'@'localhost' IDENTIFIED BY '$PLACEMENT_DBPASS';
-GRANT ALL PRIVILEGES ON placement.* TO 'placement'@'%' IDENTIFIED BY '$PLACEMENT_DBPASS';"
+"
 	undo 'mysql -u root <<< "DROP DATABASE nova_api;
 DROP DATABASE nova;
 DROP DATABASE nova_cell0;
-DROP DATABASE placement;
+
 DROP USER '"'"'nova'"'"'@'"'"'localhost'"'"';
-DROP USER '"'"'nova'"'"'@'"'"'%'"'"';
-DROP USER '"'"'placement'"'"'@'"'"'localhost'"'"';
-DROP USER '"'"'placement'"'"'@'"'"'%'"'"'"'
+DROP USER '"'"'nova'"'"'@'"'"'%'"'"';"'
 
 	p_info "creating nova user and service"
 	openstack user create --domain default --password "$NOVA_PASS" nova
@@ -294,24 +347,14 @@ DROP USER '"'"'placement'"'"'@'"'"'%'"'"'"'
 	openstack endpoint create --region RegionOne compute admin http://controller:8774/v2.1
 	undo "# REMOVE NOVA ENDPOINTS"
 
-	p_info "creating placement user and service"
-	openstack user create --domain default --password "$PLACEMENT_PASS" placement	
-	openstack role add --project service --user placement admin
-	openstack service create --name placement --description "Placement API" placement
-	undo openstack user delete placement
-	undo openstack service delete placement
-
-	p_info "creating placement endpoints"
-	openstack endpoint create --region RegionOne placement public http://controller:8778
-	openstack endpoint create --region RegionOne placement internal http://controller:8778
-	openstack endpoint create --region RegionOne placement admin http://controller:8778
-	undo "# REMOVE PLACEMENT ENDPOINTS"
 fi
 
-if ((STEP<=9)); then
+
+### NOVA INSTALL
+if ((STEP<=11)); then
 	source admin-openrc
-	_aptinstall nova-api nova-conductor nova-consoleauth nova-novncproxy nova-scheduler nova-placement-api
-	
+	apt install nova-api nova-conductor nova-novncproxy nova-scheduler
+
 	genfile /etc/nova/nova.conf "\
 [DEFAULT]
 lock_path = /var/lock/nova
@@ -363,8 +406,6 @@ user_domain_name = Default
 auth_url = http://controller:5000/v3
 username = placement
 password = $PLACEMENT_PASS
-[placement_database]
-connection = mysql+pymysql://placement:$PLACEMENT_DBPASS@controller/placement
 [scheduler]
 discover_hosts_in_cells_interval = 300
 [vnc]
@@ -382,18 +423,18 @@ server_proxyclient_address = \$my_ip"
 	p_info "populating nova database"
 	su -s /bin/sh -c "nova-manage db sync" nova
 
-	p_info "restarting services"	
+	p_info "restarting services"
 	service nova-api restart
-	service nova-consoleauth restart
 	service nova-scheduler restart
 	service nova-conductor restart
 	service nova-novncproxy restart
 fi
 
-if ((STEP<=10)); then
+## NEUTROn INSTALL
+if ((STEP<=12)); then
         source admin-openrc
         p_info "creating database for neutron"
-        _mysql "CREATE DATABASE neutron;
+        mysql "CREATE DATABASE neutron;
 GRANT ALL PRIVILEGES ON neutron.* TO 'neutron'@'localhost' IDENTIFIED BY '$NEUTRON_DBPASS';
 GRANT ALL PRIVILEGES ON neutron.* TO 'neutron'@'%' IDENTIFIED BY '$NEUTRON_DBPASS';"
         undo 'mysql -u root <<< "DROP DATABASE neutron;
@@ -414,9 +455,9 @@ DROP USER '"'"'neutron'"'"'@'"'"'%'"'"'"'
 	openstack endpoint create --region RegionOne network admin http://controller:9696
 fi
 
-if ((STEP<=11)); then
+if ((STEP<=13)); then
 	if check NETWORK_SELFSERVICE; then
-		_aptinstall neutron-server neutron-plugin-ml2 neutron-linuxbridge-agent neutron-l3-agent neutron-dhcp-agent neutron-metadata-agent
+		apt install neutron-server neutron-plugin-ml2 neutron-linuxbridge-agent neutron-dhcp-agent neutron-metadata-agent
 		genfile /etc/neutron/neutron.conf "\
 [DEFAULT]
 core_plugin = ml2
@@ -451,12 +492,12 @@ project_name = service
 username = nova
 password = $NOVA_PASS
 [oslo_concurrency]
-lock_path = /var/lock/neutron"
+lock_path = /var/lib/neutron/tmp"
 
 		genfile /etc/neutron/plugins/ml2/ml2_conf.ini "\
 [ml2]
-type_drivers = flat,vlan,vxlan
-tenant_network_types = vxlan
+type_drivers = flat,vlan
+tenant_network_types =
 mechanism_drivers = linuxbridge,l2population
 extension_drivers = port_security
 [ml2_type_flat]
@@ -473,13 +514,13 @@ physical_interface_mappings = provider:$PROVIDER_INTERFACE_NAME
 firewall_driver = neutron.agent.linux.iptables_firewall.IptablesFirewallDriver
 enable_security_group = true
 [vxlan]
-enable_vxlan = true
+enable_vxlan = false
 local_ip = $MANAGEMENT_IP
 l2_population = true"
 
-		genfile /etc/neutron/l3_agent.ini "\
-[DEFAULT]
-interface_driver = linuxbridge"
+#		genfile /etc/neutron/l3_agent.ini "\
+#[DEFAULT]
+#interface_driver = linuxbridge"
 
 		genfile /etc/neutron/dhcp_agent.ini "\
 [DEFAULT]
@@ -501,100 +542,5 @@ metadata_proxy_shared_secret = $METADATA_SECRET"
 	service neutron-linuxbridge-agent restart
 	service neutron-dhcp-agent restart
 	service neutron-metadata-agent restart
-	service neutron-l3-agent restart
-fi
-echo $CINDER_PASS
-if ((STEP<=12)); then
-        _mysql "\
-CREATE DATABASE cinder;
-GRANT ALL PRIVILEGES ON cinder.* TO 'cinder'@'localhost' IDENTIFIED BY '$CINDER_DBPASS';
-GRANT ALL PRIVILEGES ON cinder.* TO 'cinder'@'%' IDENTIFIED BY '$CINDER_DBPASS';"
-        undo 'mysql -u root <<< "DROP DATABASE cinder;
-DROP USER '"'"'cinder'"'"'@'"'"'localhost'"'"';
-DROP USER '"'"'cinder'"'"'@'"'"'%'"'"';"'
 
-	source admin-openrc
-	p_info "creating cinder user"
-	openstack user create --domain default --password "$CINDER_PASS" cinder
-	openstack role add --project service --user cinder admin
-	openstack service create --name cinderv2 --description "OpenStack Block Storage" volumev2
-	openstack service create --name cinderv3 --description "OpenStack Block Storage" volumev3
-
-	p_info "creating endpoints"
-	openstack endpoint create --region RegionOne volumev2 public http://controller:8776/v2/%\(project_id\)s
-	openstack endpoint create --region RegionOne volumev2 internal http://controller:8776/v2/%\(project_id\)s
-	openstack endpoint create --region RegionOne volumev2 admin http://controller:8776/v2/%\(project_id\)s
-	openstack endpoint create --region RegionOne volumev3 public http://controller:8776/v3/%\(project_id\)s
-	openstack endpoint create --region RegionOne volumev3 internal http://controller:8776/v3/%\(project_id\)s
-	openstack endpoint create --region RegionOne volumev3 admin http://controller:8776/v3/%\(project_id\)s
-	undo "# REMOVE CINDER ENDPOINTS IN KEYSTONE"
-
-	_aptinstall cinder-api cinder-scheduler
-fi
-
-if ((STEP<=13)); then
-	genfile /etc/cinder/cinder.conf "\
-[DEFAULT]
-rootwrap_config = /etc/cinder/rootwrap.conf
-api_paste_confg = /etc/cinder/api-paste.ini
-iscsi_helper = tgtadm
-volume_name_template = volume-%s
-volume_group = cinder-volumes
-verbose = True
-auth_strategy = keystone
-state_path = /var/lib/cinder
-lock_path = /var/lock/cinder
-volumes_dir = /var/lib/cinder/volumes
-enabled_backends = lvm
-transport_url = rabbit://openstack:$RABBIT_PASS@controller
-my_ip=$MANAGEMENT_IP
-[database]
-connection = mysql+pymysql://cinder:$CINDER_DBPASS@controller/cinder
-[keystone_authtoken]
-www_authenticate_uri = http://controller:5000
-auth_url = http://controller:5000
-memcached_servers = controller:11211
-auth_type = password
-project_domain_id = default
-user_domain_id = default
-project_name = service
-username = cinder
-password = $CINDER_PASS
-[oslo_concurrency]
-lock_path = /var/lib/cinder/tmp"
-
-	su -s /bin/sh -c "cinder-manage db sync" cinder
-
-	crudini --set /etc/nova/nova.conf cinder os_region_name RegionOne	
-
-	service nova-api restart
-	service cinder-scheduler restart
-	service apache2 restart
-fi
-
-if ((STEP<=14)); then
-	if [ "$CINDER_DEV" != "" ]; then
-		_aptinstall lvm2 thin-provisioning-tools
-		pvcreate $CINDER_DEV
-		undo pvremove $CINDER_DEV
-		vgcreate cinder-volumes $CINDER_DEV
-		undo vgremove cinder-volumes
-
-		p_info "you are advised to remove any lvm volume from lvm.conf in the storage node
-i.e. add the following filter to /lvm/lvm.conf, section devices; it makes lvscan to ignore any device but vdb
-	filter = [ \"a/vdb/*\", \"r/.*/\" ]"
-
-		_aptinstall cinder-volume
-
-		crudini --set /etc/cinder/cinder.conf lvm volume_driver cinder.volume.drivers.lvm.LVMVolumeDriver
-		crudini --set /etc/cinder/cinder.conf lvm volume_group cinder-volumes
-		crudini --set /etc/cinder/cinder.conf lvm iscsi_protocol iscsi
-		crudini --set /etc/cinder/cinder.conf lvm iscsi_helper tgtadm
-		crudini --set /etc/cinder/cinder.conf DEFAULT glance_api_servers "http://controller:9292"
-
-		service tgt restart
-		service cinder-volume restart
-	else
-		p_info "skipping lvm configuration because no device was configured"
-	fi
 fi
