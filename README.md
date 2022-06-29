@@ -1,1 +1,1 @@
-this project have scripts of openstack installating wit yoga version
+this project have scripts of openstack installating with yoga version
