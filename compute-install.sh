@@ -1,8 +1,14 @@
+# nova
+PART1=true
+
+# neutron
+PART2=true
 IP=${1}
 
 if [ "$IP" == "" ]; then
-	echo "must enter an IP ending (eg. 247 para 192.168.10.247)"
+	echo "must enter private IP of Host (eg. 192.168.10.247)"
 	exit 1
+fi
 
 cat >> /etc/default/grub << EOT
 GRUB_CMDLINE_LINUX_DEFAULT="ipv6.disable=1"
@@ -16,7 +22,7 @@ sed -i 's/^pool/#pool/g' /etc/chrony/chrony.conf
 echo "server controller iburst" >> /etc/chrony/chrony.conf
 service chrony restart
 
-
+if [ "$PART1" == "true" ]; then
 apt install software-properties-common
 add-apt-repository cloud-archive:yoga
 apt update && apt -y dist-upgrade
@@ -26,11 +32,10 @@ cat > /etc/nova/nova.conf << EOT
 [DEFAULT]
 # ...
 transport_url = rabbit://openstack:RABBIT_PASS@controller
-my_ip = MANAGEMENT_INTERFACE_IP_ADDRESS
+my_ip = $IP
 [api]
 # ...
 auth_strategy = keystone
-
 [keystone_authtoken]
 # ...
 www_authenticate_uri = http://controller:5000/
@@ -72,5 +77,61 @@ discover_hosts_in_cells_interval = 300
 EOT
 
 service nova-compute restart
+fi
 
+if [ "$PART2" == "true" ]; then
+apt install neutron-linuxbridge-agent
+cat> /etc/neutron/neutron.conf <<EOT
+[DEFAULT]
+# ...
+transport_url = rabbit://openstack:RABBIT_PASS@controller
+auth_strategy = keystone
+[keystone_authtoken]
+# ...
+www_authenticate_uri = http://controller:5000
+auth_url = http://controller:5000
+memcached_servers = controller:11211
+auth_type = password
+project_domain_name = default
+user_domain_name = default
+project_name = service
+username = neutron
+password = NEUTRON_PASS
+[oslo_concurrency]
+# ...
+lock_path = /var/lib/neutron/tmp
+EOT
 
+cat>/etc/nova/nova.conf <<EOT
+[neutron]
+# ...
+auth_url = http://controller:5000
+auth_type = password
+project_domain_name = default
+user_domain_name = default
+region_name = RegionOne
+project_name = service
+username = neutron
+password = NEUTRON_PASS
+EOT
+
+## restart neutron servers
+service nova-compute restart
+service neutron-linuxbridge-agent restart
+
+cat> /etc/neutron/plugins/ml2/linuxbridge_agent.ini<<EOT
+[linux_bridge]
+physical_interface_mappings = provider:PROVIDER_INTERFACE_NAME
+[vxlan]
+enable_vxlan = false
+[securitygroup]
+# ...
+enable_security_group = true
+firewall_driver = neutron.agent.linux.iptables_firewall.IptablesFirewallDriver
+EOT
+fi
+
+echo "compute node is installed completely!"
+echo "ready... press enter to reboot!!!"
+read
+reboot

@@ -153,7 +153,7 @@ if ((STEP<=1)); then
 fi
 
 if ((STEP<=2)); then
-apt install keystone apache2 libapache2-mod-wsgi
+apt install keystone
 
 genfile /etc/keystone/keystone.conf "\
 [DEFAULT]
@@ -590,3 +590,49 @@ metadata_proxy_shared_secret = $METADATA_SECRET"
 
 fi
 
+p_info "openstack is installed succesfully \o/ \o/ \o/ "
+
+
+## HORiZON INSTALL
+if ((STEP <=14)); then
+	p_info "Installing Horizon"
+	apt install openstack-dashboard
+genfile /etc/openstack-dashboard/local_settings.py "\
+OPENSTACK_HOST = "controller"
+#ALLOWED_HOSTS = ['one.example.com', 'two.example.com']
+SESSION_ENGINE = 'django.contrib.sessions.backends.cache'
+
+CACHES = {
+    'default': {
+         'BACKEND': 'django.core.cache.backends.memcached.MemcachedCache',
+         'LOCATION': 'controller:11211',
+    }
+}
+
+OPENSTACK_KEYSTONE_URL = "http://%s/identity/v3" % OPENSTACK_HOST
+OPENSTACK_KEYSTONE_MULTIDOMAIN_SUPPORT = True
+OPENSTACK_API_VERSIONS = {
+    "identity": 3,
+    "image": 2,
+    "volume": 3,
+}
+
+OPENSTACK_KEYSTONE_DEFAULT_DOMAIN = "Default"
+OPENSTACK_KEYSTONE_DEFAULT_ROLE = "user"
+OPENSTACK_NEUTRON_NETWORK = {
+    ...
+    'enable_router': False,
+    'enable_quotas': False,
+    'enable_ipv6': False,
+    'enable_distributed_router': False,
+    'enable_ha_router': False,
+    'enable_fip_topology_check': False,
+}"
+
+genfile /etc/apache2/conf-available/openstack-dashboard.conf "\
+WSGIApplicationGroup %{GLOBAL}"
+
+p_info "reload web server with Horizon configution"
+systemctl reload apache2.service
+
+fi
