@@ -131,7 +131,7 @@ firewall_driver = neutron.agent.linux.iptables_firewall.IptablesFirewallDriver
 EOT
 fi
 
-echo "compute node is installed completely!"
+echo "The Compute Node installation is completed!"
 echo "ready... press enter to reboot!!!"
 read
 reboot
