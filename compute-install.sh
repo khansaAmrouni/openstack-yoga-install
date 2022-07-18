@@ -3,6 +3,8 @@ PART1=true
 
 # neutron
 PART2=true
+PROVIDER_INTERFACE_NAME=enP24088s1
+
 IP=${1}
 
 if [ "$IP" == "" ]; then
@@ -30,14 +32,12 @@ apt install -y python3-openstackclient nova-compute
 
 cat > /etc/nova/nova.conf << EOT
 [DEFAULT]
-# ...
 transport_url = rabbit://openstack:RABBIT_PASS@controller
 my_ip = $IP
 [api]
-# ...
 auth_strategy = keystone
+
 [keystone_authtoken]
-# ...
 www_authenticate_uri = http://controller:5000/
 auth_url = http://controller:5000/
 memcached_servers = controller:11211
@@ -48,17 +48,16 @@ project_name = service
 username = nova
 password = NOVA_PASS
 [vnc]
-# ...
 enabled = true
 server_listen = 0.0.0.0
 server_proxyclient_address = $my_ip
 novncproxy_base_url = http://controller:6080/vnc_auto.html
 [glance]
-# ...
+
 api_servers = http://controller:9292
 [oslo_concurrency]
-# ...
-lock_path = /var/lib/nova/tmp
+
+lock_path =/var/lib/nova/tmp
 [placement]
 # ...
 region_name = RegionOne
@@ -74,6 +73,16 @@ password = PLACEMENT_PASS
 virt_type = qemu
 [scheduler]
 discover_hosts_in_cells_interval = 300
+[neutron]
+# ...
+auth_url = http://controller:5000
+auth_type = password
+project_domain_name = default
+user_domain_name = default
+region_name = RegionOne
+project_name = service
+username = neutron
+password = NEUTRON_PASS
 EOT
 
 service nova-compute restart
@@ -87,7 +96,6 @@ cat> /etc/neutron/neutron.conf <<EOT
 transport_url = rabbit://openstack:RABBIT_PASS@controller
 auth_strategy = keystone
 [keystone_authtoken]
-# ...
 www_authenticate_uri = http://controller:5000
 auth_url = http://controller:5000
 memcached_servers = controller:11211
@@ -98,21 +106,7 @@ project_name = service
 username = neutron
 password = NEUTRON_PASS
 [oslo_concurrency]
-# ...
 lock_path = /var/lib/neutron/tmp
-EOT
-
-cat>/etc/nova/nova.conf <<EOT
-[neutron]
-# ...
-auth_url = http://controller:5000
-auth_type = password
-project_domain_name = default
-user_domain_name = default
-region_name = RegionOne
-project_name = service
-username = neutron
-password = NEUTRON_PASS
 EOT
 
 ## restart neutron servers
@@ -121,11 +115,11 @@ service neutron-linuxbridge-agent restart
 
 cat> /etc/neutron/plugins/ml2/linuxbridge_agent.ini<<EOT
 [linux_bridge]
-physical_interface_mappings = provider:PROVIDER_INTERFACE_NAME
+physical_interface_mappings = provider:$PROVIDER_INTERFACE_NAME
 [vxlan]
 enable_vxlan = false
 [securitygroup]
-# ...
+
 enable_security_group = true
 firewall_driver = neutron.agent.linux.iptables_firewall.IptablesFirewallDriver
 EOT

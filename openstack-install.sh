@@ -573,8 +573,6 @@ firewall_driver = neutron.agent.linux.iptables_firewall.IptablesFirewallDriver
 enable_security_group = true
 [vxlan]
 enable_vxlan = false
-local_ip = $MANAGEMENT_IP
-l2_population = true"
 
 #		genfile /etc/neutron/l3_agent.ini "\
 #[DEFAULT]
