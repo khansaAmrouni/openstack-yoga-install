@@ -5,13 +5,13 @@ WORKING_FOLDER="$HOME/openstack-install"
 [ ! -d "$WORKING_FOLDER" ] && mkdir -p "$WORKING_FOLDER"
 
 STEP=${1}
-MANAGEMENT_NETWORK="10.1.0.0/24"
-MANAGEMENT_IP="10.1.0.8"
+MANAGEMENT_NETWORK="10.*.*.*/24"
+MANAGEMENT_IP="*"
 PASSWD_FILE="$WORKING_FOLDER/passwd.txt"
 QUIET=false
 QUIET_APT=true
 NETWORK_SELFSERVICE=true
-PROVIDER_INTERFACE_NAME=eth0
+PROVIDER_INTERFACE_NAME=********
 DNS_SERVERS=
 SIMPLE_PASSWDS=true
 
@@ -209,7 +209,7 @@ export OS_USER_DOMAIN_NAME=Default
 export OS_PROJECT_NAME=admin
 export OS_USERNAME=admin
 export OS_PASSWORD="${ADMIN_PASS}"
-export OS_AUTH_URL=http://controller:5000/v3
+export OS_AUTH_URL=http://controller:5000/identity/v3
 export OS_IDENTITY_API_VERSION=3
 export OS_IMAGE_API_VERSION=2
 
@@ -219,7 +219,7 @@ export OS_USER_DOMAIN_NAME=Default
 export OS_PROJECT_NAME=admin
 export OS_USERNAME=admin
 export OS_PASSWORD="${ADMIN_PASS}"
-export OS_AUTH_URL=http://controller:5000/v3
+export OS_AUTH_URL=http://controller:5000/identity/v3
 export OS_IDENTITY_API_VERSION=3
 export OS_IMAGE_API_VERSION=2"
 
@@ -275,7 +275,7 @@ fi
 ## INSTALL GLANCE
 if ((STEP<=6)); then
 	p_info "installing glance"
-	apt install glance 
+	apt install -y glance
 
 	genfile /etc/glance/glance-api.conf "\
 [database]
@@ -348,7 +348,7 @@ fi
 # INSTALL PLACEMENT 
 if ((STEP<=9)); then
         p_info "installing placement"
-        apt install placement-api
+        apt install -y placement-api
 
         genfile /etc/placement/placement.conf "\
 [placement_database]
@@ -411,7 +411,7 @@ fi
 ### NOVA INSTALL
 if ((STEP<=11)); then
 	source admin-openrc
-	apt install nova-api nova-conductor nova-novncproxy nova-scheduler
+	apt install -y  nova-api nova-conductor nova-novncproxy nova-scheduler
 
 	genfile /etc/nova/nova.conf "\
 [DEFAULT]
@@ -431,6 +431,8 @@ enable = False
 connection = mysql+pymysql://nova:$NOVA_DBPASS@controller/nova
 [glance]
 api_servers = http://controller:9292
+[scheduler]
+discover_hosts_in_cells_interval = 300
 [keystone_authtoken]
 auth_url = http://controller:5000/v3
 memcached_servers = controller:11211
@@ -488,16 +490,20 @@ server_proxyclient_address = \$my_ip"
 	service nova-novncproxy restart
 fi
 
-## NEUTROn INSTALL
+## Discover Compute Hosts..
+	p_info "Discover compute hosts"
+	su -s /bin/sh -c "nova-manage cell_v2 discover_hosts --verbose" nova
+
+## NEUTRON INSTALL
 if ((STEP<=12)); then
         source admin-openrc
         p_info "creating database for neutron"
         _mysql "CREATE DATABASE neutron;
-GRANT ALL PRIVILEGES ON neutron.* TO 'neutron'@'localhost' IDENTIFIED BY '$NEUTRON_DBPASS';
-GRANT ALL PRIVILEGES ON neutron.* TO 'neutron'@'%' IDENTIFIED BY '$NEUTRON_DBPASS';"
+	GRANT ALL PRIVILEGES ON neutron.* TO 'neutron'@'localhost' IDENTIFIED BY '$NEUTRON_DBPASS';
+	GRANT ALL PRIVILEGES ON neutron.* TO 'neutron'@'%' IDENTIFIED BY '$NEUTRON_DBPASS';"
         undo 'mysql -u root <<< "DROP DATABASE neutron;
-DROP USER '"'"'neutron'"'"'@'"'"'localhost'"'"';
-DROP USER '"'"'neutron'"'"'@'"'"'%'"'"'"'
+	DROP USER '"'"'neutron'"'"'@'"'"'localhost'"'"';
+	DROP USER '"'"'neutron'"'"'@'"'"'%'"'"'"'
 
         p_info "creating neutron user and service"
         openstack user create --domain default --password "$NEUTRON_PASS" neutron
@@ -515,7 +521,7 @@ fi
 
 if ((STEP<=13)); then
 	if check NETWORK_SELFSERVICE; then
-		apt install neutron-server neutron-plugin-ml2 neutron-linuxbridge-agent neutron-dhcp-agent neutron-metadata-agent
+		apt install -y neutron-server neutron-plugin-ml2 neutron-linuxbridge-agent neutron-dhcp-agent neutron-metadata-agent
 		genfile /etc/neutron/neutron.conf "\
 [DEFAULT]
 core_plugin = ml2
@@ -602,44 +608,25 @@ p_info "Openstack Is Installed Succesfully \o/ \o/ \o/ .. "
 
 
 ## HORiZON INSTALL
-#if ((STEP <=14)); then
-#	p_info "Installing Horizon dashboard.."
-#	apt -y install openstack-dashboard
-#genfile /etc/openstack-dashboard/local_settings.py "\
-#OPENSTACK_HOST = "controller"
-#ALLOWED_HOSTS = ['*']
-#SESSION_ENGINE = 'django.contrib.sessions.backends.cache'
+if ((STEP <=14)); then
+	p_info "Installing Horizon dashboard.."
+	apt -y install openstack-dashboard
 
-#CACHES = {
-#    'default': {
-#         'BACKEND': 'django.core.cache.backends.memcached.MemcachedCache',
-#         'LOCATION': 'controller:11211',
-#    }
-#}
+ sed -i 's/OPENSTACK_HOST = "[^"]*"/OPENSTACK_HOST = "controller"/g' /etc/openstack-dashboard/local_settings.py
+ sed -i 's/^\(CACHES = {\)/SESSION_ENGINE = "django.contrib.sessions.backends.cache"\n\1/' /etc/openstack-dashboard/local_settings.py
+ sed -i "s/'LOCATION': '127\.0\.0\.1:11211',/'LOCATION': 'controller:11211'/" /etc/openstack-dashboard/local_settings.py
+ sed -i 's/^\(#OPENSTACK_API_VERSIONS = {\)/OPENSTACK_API_VERSIONS = {\n"identity": 3,\n"image": 2,\n"volume": 2,\n}\n\1' /etc/openstack-dashboard/local_settings.p
+ sed -i 's/^OPENSTACK_KEYSTONE_DEFAULT_ROLE = "[^"]*"/OPENSTACK_KEYSTONE_DEFAULT_ROLE = "admin"/' /etc/openstack-dashboard/local_settings.py
+ sed -i "/^#OPENSTACK_KEYSTONE_DEFAULT_DOMAIN =.*$/aOPENSTACK_KEYSTONE_DEFAULT_DOMAIN='Default'" /etc/openstack-dashboard/local_settings.py
+sed -i 's/^TIME_ZONE = "UTC"/TIME_ZONE = "Europe\/Madrid"/' /etc/openstack-dashboard/local_settings.py
 
-#OPENSTACK_KEYSTONE_URL = "http://%s:5000/v3" % OPENSTACK_HOST
-#OPENSTACK_KEYSTONE_MULTIDOMAIN_SUPPORT = True
-#OPENSTACK_API_VERSIONS = {
-#    "identity": 3,
-#    "image": 2,
-#    "volume": 3,
-#}
 
-#OPENSTACK_KEYSTONE_DEFAULT_DOMAIN = "Default"
-#OPENSTACK_KEYSTONE_DEFAULT_ROLE = "admin"
-#OPENSTACK_NEUTRON_NETWORK = {
-#    'enable_router': False,
-#    'enable_quotas': False,
-#    'enable_ipv6': False,
-#    'enable_distributed_router': False,
-#    'enable_ha_router': False,
-#    'enable_fip_topology_check': False,
-#}"
 
-#genfile /etc/apache2/conf-available/openstack-dashboard.conf "\
-#WSGIApplicationGroup %{GLOBAL}"
+genfile /etc/apache2/conf-available/openstack-dashboard.conf "\
+WSGIApplicationGroup %{GLOBAL}"
 
-#p_info "reload web server with Horizon configution"
-#systemctl reload apache2.service
-#p_info "apache2 service is reloaded succesfully! Then END..."
-#fi
+p_info "reload web server with Horizon configution"
+systemctl reload apache2.service
+fi
+p_info "apache2 service is reloaded succesfully! Then END..."
+
