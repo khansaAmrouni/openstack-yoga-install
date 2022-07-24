@@ -32,12 +32,12 @@ II- Compute Node:
 
 Controller Node
 ```sh
-chmod 766 openstack-install.sh
-./openstack-install.sh
+$ chmod 733 openstack-install.sh
+$ ./openstack-install.sh
 ```
 
 Compute Node
 ```sh
-chmod 766 compute-install.sh
-./compute-install.sh
+$ chmod 733 compute-install.sh
+$ ./compute-install.sh
 ```
