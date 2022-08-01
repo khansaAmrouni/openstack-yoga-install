@@ -5,13 +5,13 @@ WORKING_FOLDER="$HOME/openstack-install"
 [ ! -d "$WORKING_FOLDER" ] && mkdir -p "$WORKING_FOLDER"
 
 STEP=${1}
-MANAGEMENT_NETWORK="10.*.*.*/24"
-MANAGEMENT_IP="*"
+MANAGEMENT_NETWORK="10.../24" ## to edit !
+MANAGEMENT_IP="10.2.1.3" ## to edit !
 PASSWD_FILE="$WORKING_FOLDER/passwd.txt"
 QUIET=false
 QUIET_APT=true
 NETWORK_SELFSERVICE=true
-PROVIDER_INTERFACE_NAME=********
+PROVIDER_INTERFACE_NAME=eth0 ## to edit !
 DNS_SERVERS=
 SIMPLE_PASSWDS=true
 
@@ -470,8 +470,8 @@ password = $PLACEMENT_PASS
 discover_hosts_in_cells_interval = 300
 [vnc]
 enabled = true
-server_listen = \$my_ip
-server_proxyclient_address = \$my_ip"
+server_listen = $MANAGEMENT_IP
+server_proxyclient_address = $MANAGEMENT_IP"
 
 	p_info "populating nova-api and placement databases"
 	su -s /bin/sh -c "nova-manage api_db sync" nova
@@ -607,6 +607,7 @@ fi
 p_info "Openstack Is Installed Succesfully \o/ \o/ \o/ .. "
 
 
+
 ## HORiZON INSTALL
 if ((STEP <=14)); then
 	p_info "Installing Horizon dashboard.."
@@ -625,8 +626,9 @@ sed -i 's/^TIME_ZONE = "UTC"/TIME_ZONE = "Europe\/Madrid"/' /etc/openstack-dashb
 genfile /etc/apache2/conf-available/openstack-dashboard.conf "\
 WSGIApplicationGroup %{GLOBAL}"
 
-p_info "reload web server with Horizon configution"
+p_info "reload web server with Horizon configuration"
 systemctl reload apache2.service
 fi
-p_info "apache2 service is reloaded succesfully! Then END..."
+p_info "apache2 service is reloaded succesfully!"
+P_info " please try the openstack dashboard on http://controller/horizon"
 

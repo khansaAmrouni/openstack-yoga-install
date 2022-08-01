@@ -6,6 +6,7 @@ PART2=true
 PROVIDER_INTERFACE_NAME=????
 
 IP=${1}
+CIP=${2}
 
 if [ "$IP" == "" ]; then
 	echo "must enter private IP of Host (eg. 192.168.10.247)"
@@ -35,6 +36,8 @@ cat > /etc/nova/nova.conf << EOT
 transport_url = rabbit://openstack:RABBIT_PASS@controller
 my_ip = $IP
 instances_path=/var/lib/nova/instances
+vif_plugging_timeout = 10
+vif_plugging_is_fatal = False
 [api]
 auth_strategy = keystone
 
@@ -53,7 +56,7 @@ password = NOVA_PASS
 enabled = true
 server_listen = 0.0.0.0
 server_proxyclient_address = $IP
-novncproxy_base_url = http://controller:6080/vnc_auto.html
+novncproxy_base_url = http://$CIP:6080/vnc_auto.html
 
 [glance]
 api_servers = http://controller:9292
