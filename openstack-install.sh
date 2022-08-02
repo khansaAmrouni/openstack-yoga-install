@@ -619,8 +619,8 @@ if ((STEP <=14)); then
  sed -i 's/^\(#OPENSTACK_API_VERSIONS = {\)/OPENSTACK_API_VERSIONS = {\n"identity": 3,\n"image": 2,\n"volume": 2,\n}\n\1' /etc/openstack-dashboard/local_settings.p
  sed -i 's/^OPENSTACK_KEYSTONE_DEFAULT_ROLE = "[^"]*"/OPENSTACK_KEYSTONE_DEFAULT_ROLE = "admin"/' /etc/openstack-dashboard/local_settings.py
  sed -i "/^#OPENSTACK_KEYSTONE_DEFAULT_DOMAIN =.*$/aOPENSTACK_KEYSTONE_DEFAULT_DOMAIN='Default'" /etc/openstack-dashboard/local_settings.py
-sed -i 's/^TIME_ZONE = "UTC"/TIME_ZONE = "Europe\/Madrid"/' /etc/openstack-dashboard/local_settings.py
-
+ sed -i 's/^TIME_ZONE = "UTC"/TIME_ZONE = "Europe\/Madrid"/' /etc/openstack-dashboard/local_settings.py
+ sed -i -e '/identity/s/%s/%s:5000/' /etc/openstack-dashboard/local_settings.py
 
 
 genfile /etc/apache2/conf-available/openstack-dashboard.conf "\
@@ -629,6 +629,7 @@ WSGIApplicationGroup %{GLOBAL}"
 p_info "reload web server with Horizon configuration"
 systemctl reload apache2.service
 fi
+
 p_info "apache2 service is reloaded succesfully!"
 P_info " please try the openstack dashboard on http://controller/horizon"
 
