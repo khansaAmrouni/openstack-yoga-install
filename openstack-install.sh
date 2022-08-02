@@ -616,7 +616,7 @@ if ((STEP <=14)); then
  sed -i 's/OPENSTACK_HOST = "[^"]*"/OPENSTACK_HOST = "controller"/g' /etc/openstack-dashboard/local_settings.py
  sed -i 's/^\(CACHES = {\)/SESSION_ENGINE = "django.contrib.sessions.backends.cache"\n\1/' /etc/openstack-dashboard/local_settings.py
  sed -i "s/'LOCATION': '127\.0\.0\.1:11211',/'LOCATION': 'controller:11211'/" /etc/openstack-dashboard/local_settings.py
- sed -i 's/^\(#OPENSTACK_API_VERSIONS = {\)/OPENSTACK_API_VERSIONS = {\n"identity": 3,\n"image": 2,\n"volume": 2,\n}\n\1' /etc/openstack-dashboard/local_settings.p
+ sed -i 's/^\(#OPENSTACK_API_VERSIONS = {\)/OPENSTACK_API_VERSIONS = {\n"identity": 3,\n"image": 2,\n"volume": 2,\n}\n\1/' /etc/openstack-dashboard/local_settings.p
  sed -i 's/^OPENSTACK_KEYSTONE_DEFAULT_ROLE = "[^"]*"/OPENSTACK_KEYSTONE_DEFAULT_ROLE = "admin"/' /etc/openstack-dashboard/local_settings.py
  sed -i "/^#OPENSTACK_KEYSTONE_DEFAULT_DOMAIN =.*$/aOPENSTACK_KEYSTONE_DEFAULT_DOMAIN='Default'" /etc/openstack-dashboard/local_settings.py
  sed -i 's/^TIME_ZONE = "UTC"/TIME_ZONE = "Europe\/Madrid"/' /etc/openstack-dashboard/local_settings.py
@@ -631,5 +631,5 @@ systemctl reload apache2.service
 fi
 
 p_info "apache2 service is reloaded succesfully!"
-P_info " please try the openstack dashboard on http://controller/horizon"
+P_info " ****  Please try the openstack dashboard on http://controller/horizon "
 
