@@ -3,13 +3,19 @@ PART1=true
 
 # neutron
 PART2=true
-PROVIDER_INTERFACE_NAME=????
-
+PROVIDER_INTERFACE_NAME=*** #please edit this with  your interface name!
+# compute node private ip
 IP=${1}
-CIP=${2}
+# controller public ip
+pubIP=${2}
 
 if [ "$IP" == "" ]; then
-	echo "must enter private IP of Host (eg. 192.168.10.247)"
+	echo "must enter private IP of compute Host (eg. 192.168.10.247)"
+	exit 1
+fi
+
+if [ "$pubIP" == "" ]: then
+	echo "must enter public IP of controller HOST"
 	exit 1
 fi
 
@@ -56,7 +62,7 @@ password = NOVA_PASS
 enabled = true
 server_listen = 0.0.0.0
 server_proxyclient_address = $IP
-novncproxy_base_url = http://$CIP:6080/vnc_auto.html
+novncproxy_base_url = http://$pubIP:6080/vnc_auto.html
 
 [glance]
 api_servers = http://controller:9292
