@@ -631,5 +631,4 @@ systemctl reload apache2.service
 fi
 
 p_info "apache2 service is reloaded succesfully!"
-P_info " ****  Please try the openstack dashboard on http://controller/horizon "
-
+p_info " ****  Please try the openstack dashboard on http://controller/horizon "

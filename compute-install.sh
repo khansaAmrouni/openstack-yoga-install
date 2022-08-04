@@ -14,7 +14,7 @@ if [ "$IP" == "" ]; then
 	exit 1
 fi
 
-if [ "$pubIP" == "" ]: then
+if [ "$pubIP" == "" ]; then
 	echo "must enter public IP of controller HOST"
 	exit 1
 fi
