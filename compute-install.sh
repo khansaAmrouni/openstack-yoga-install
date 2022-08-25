@@ -37,6 +37,8 @@ add-apt-repository cloud-archive:yoga
 apt update && apt -y dist-upgrade
 apt install -y python3-openstackclient nova-compute
 
+
+## nova install
 cat > /etc/nova/nova.conf << EOT
 [DEFAULT]
 transport_url = rabbit://openstack:RABBIT_PASS@controller
@@ -92,6 +94,7 @@ password = NEUTRON_PASS
 EOT
 
 service nova-compute restart
+
 fi
 
 if [ "$PART2" == "true" ]; then
@@ -105,6 +108,9 @@ neutron ALL = (root) NOPASSWD: ALL
 EOT
 
 service nova-compute restart
+
+
+## neutron install
 
 apt install -y neutron-linuxbridge-agent
 cat> /etc/neutron/neutron.conf <<EOT
@@ -128,6 +134,7 @@ lock_path = /var/lib/neutron/tmp
 EOT
 
 chmod 640 /etc/neutron/neutron.conf
+
 ## restart neutron servers
 service nova-compute restart
 service neutron-linuxbridge-agent restart
@@ -137,12 +144,18 @@ cat> /etc/neutron/plugins/ml2/linuxbridge_agent.ini<<EOT
 physical_interface_mappings = provider:$PROVIDER_INTERFACE_NAME
 
 [vxlan]
-enable_vxlan = false
+enable_vxlan = true
+local_ip = $IP
+l2_population = true
 
 [securitygroup]
 enable_security_group = true
 firewall_driver = neutron.agent.linux.iptables_firewall.IptablesFirewallDriver
 EOT
+service nova-compute restart
+service neutron-linuxbridge-agent restart
+
+
 fi
 
 echo "The Compute Node installation is completed!"

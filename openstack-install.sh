@@ -5,8 +5,8 @@ WORKING_FOLDER="$HOME/openstack-install"
 [ ! -d "$WORKING_FOLDER" ] && mkdir -p "$WORKING_FOLDER"
 
 STEP=${1}
-MANAGEMENT_NETWORK="10.../24" ## to edit !
-MANAGEMENT_IP="10.2.1.3" ## to edit !
+MANAGEMENT_NETWORK="10...0/24" ## to edit !
+MANAGEMENT_IP="10..." ## to edit !
 PASSWD_FILE="$WORKING_FOLDER/passwd.txt"
 QUIET=false
 QUIET_APT=true
@@ -118,9 +118,9 @@ if ((STEP<=0)); then
 p_info "installing and configuring dependencies"
 apt update
 apt -y dist-upgrade
-apt install software-properties-common
+apt -y install software-properties-common
 add-apt-repository -y cloud-archive:yoga > /dev/null 2> /dev/null
-apt install chrony mariadb-server python3-pymysql python3-openstackclient rabbitmq-server memcached python3-memcache etcd
+apt -y install chrony mariadb-server python3-pymysql python3-openstackclient rabbitmq-server memcached python3-memcache etcd
 undo add-apt-repository -y -r cloud-archive:yoga
 
 p_info "configuring ntp"
@@ -172,7 +172,7 @@ if ((STEP<=1)); then
 fi
 
 if ((STEP<=2)); then
-apt install keystone
+apt -y install keystone
 
 genfile /etc/keystone/keystone.conf "\
 [DEFAULT]
@@ -352,13 +352,10 @@ if ((STEP<=9)); then
 
         genfile /etc/placement/placement.conf "\
 [placement_database]
-# ...
 connection = mysql+pymysql://placement:PLACEMENT_DBPASS@controller/placement
 [api]
-# ...
 auth_strategy = keystone
 [keystone_authtoken]
-# ...
 auth_url = http://controller:5000/v3
 memcached_servers = controller:11211
 auth_type = password
@@ -415,8 +412,8 @@ if ((STEP<=11)); then
 
 	genfile /etc/nova/nova.conf "\
 [DEFAULT]
-lock_path = /var/lock/nova
-state_path = /var/lib/nova
+#lock_path = /var/lock/nova
+#state_path = /var/lib/nova
 transport_url = rabbit://openstack:$RABBIT_PASS@controller
 my_ip = $MANAGEMENT_IP
 use_neutron = true
@@ -434,7 +431,8 @@ api_servers = http://controller:9292
 [scheduler]
 discover_hosts_in_cells_interval = 300
 [keystone_authtoken]
-auth_url = http://controller:5000/v3
+www_authenticate_uri = http://controller:5000/
+auth_url = http://controller:5000/
 memcached_servers = controller:11211
 auth_type = password
 project_domain_name = default
@@ -457,7 +455,6 @@ metadata_proxy_shared_secret = $METADATA_SECRET
 [oslo_concurrency]
 lock_path = /var/lib/nova/tmp
 [placement]
-os_region_name = openstack
 region_name = RegionOne
 project_domain_name = Default
 project_name = service
@@ -495,6 +492,16 @@ fi
 	su -s /bin/sh -c "nova-manage cell_v2 discover_hosts --verbose" nova
 
 ## NEUTRON INSTALL
+echo "adding sudo right to neutron "
+   cat> /etc/sudoers.d/neutron_sudoers <<EOT
+Defaults:neutron !requiretty
+
+neutron ALL = (root) NOPASSWD: /usr/bin/neutron-rootwrap /etc/neutron/rootwrap.conf *
+neutron ALL = (root) NOPASSWD: /usr/bin/neutron-rootwrap-daemon /etc/neutron/rootwrap.conf
+neutron ALL = (root) NOPASSWD: ALL
+EOT
+
+
 if ((STEP<=12)); then
         source admin-openrc
         p_info "creating database for neutron"
@@ -521,21 +528,20 @@ fi
 
 if ((STEP<=13)); then
 	if check NETWORK_SELFSERVICE; then
-		apt install -y neutron-server neutron-plugin-ml2 neutron-linuxbridge-agent neutron-dhcp-agent neutron-metadata-agent
-		genfile /etc/neutron/neutron.conf "\
+	apt -y install neutron-server neutron-plugin-ml2 neutron-linuxbridge-agent neutron-l3-agent neutron-dhcp-agent neutron-metadata-agent
+	genfile /etc/neutron/neutron.conf "\
 [DEFAULT]
-core_plugin = ml2
 core_plugin = ml2
 service_plugins = router
 allow_overlapping_ips = true
-transport_url = rabbit://openstack:$RABBIT_PASS@controller
+transport_url = rabbit://openstack:RABBIT_PASS@controller
 auth_strategy = keystone
 notify_nova_on_port_status_changes = true
 notify_nova_on_port_data_changes = true
-[agent]
-root_helper = "sudo /usr/bin/neutron-rootwrap /etc/neutron/rootwrap.conf"
+
 [database]
-connection = mysql+pymysql://neutron:$NEUTRON_DBPASS@controller/neutron
+connection = mysql+pymysql://neutron:NEUTRON_DBPASS@controller/neutron
+
 [keystone_authtoken]
 www_authenticate_uri = http://controller:5000
 auth_url = http://controller:5000
@@ -545,7 +551,8 @@ project_domain_name = default
 user_domain_name = default
 project_name = service
 username = neutron
-password = $NEUTRON_PASS
+password = NEUTRON_PASS
+
 [nova]
 auth_url = http://controller:5000
 auth_type = password
@@ -554,7 +561,84 @@ user_domain_name = default
 region_name = RegionOne
 project_name = service
 username = nova
-password = $NOVA_PASS
+password = NOVA_PASS
+
+[oslo_concurrency]
+lock_path = /var/lib/neutron/tmp"
+
+
+		genfile /etc/neutron/plugins/ml2/ml2_conf.ini "\
+[ml2]
+type_drivers = flat,vlan,vxlan
+tenant_network_types = vxlan
+mechanism_drivers = linuxbridge,l2population
+extension_drivers = port_security
+
+[ml2_type_flat]
+flat_networks = provider
+
+[ml2_type_vxlan]
+vni_ranges = 1:1000
+
+[securitygroup]
+enable_ipset = true"
+
+		genfile /etc/neutron/plugins/ml2/linuxbridge_agent.ini "\
+[linux_bridge]
+physical_interface_mappings = provider:$PROVIDER_INTERFACE_NAME
+
+[vxlan]
+enable_vxlan = true
+local_ip = $MANAGEMENT_IP
+l2_population = true
+
+[securitygroup]
+enable_security_group = true
+firewall_driver = neutron.agent.linux.iptables_firewall.IptablesFirewallDriver"
+
+		genfile /etc/neutron/l3_agent.ini "\
+[DEFAULT]
+interface_driver = linuxbridge"
+
+		genfile /etc/neutron/dhcp_agent.ini "\
+[DEFAULT]
+interface_driver = linuxbridge
+dhcp_driver = neutron.agent.linux.dhcp.Dnsmasq
+enable_isolated_metadata = true"
+
+## ====> Provider network 
+else
+		apt install -y neutron-server neutron-plugin-ml2 neutron-linuxbridge-agent neutron-dhcp-agent neutron-metadata-agent
+		genfile /etc/neutron/neutron.conf "\
+[DEFAULT]
+core_plugin = ml2
+service_plugins =
+allow_overlapping_ips = true
+transport_url = rabbit://openstack:RABBIT_PASS@controller
+auth_strategy = keystone
+notify_nova_on_port_status_changes = true
+notify_nova_on_port_data_changes = true
+[database]
+connection = mysql+pymysql://neutron:NEUTRON_DBPASS@controller/neutron
+[keystone_authtoken]
+www_authenticate_uri = http://controller:5000
+auth_url = http://controller:5000
+memcached_servers = controller:11211
+auth_type = password
+project_domain_name = default
+user_domain_name = default
+project_name = service
+username = neutron
+password = NEUTRON_PASS
+[nova]
+auth_url = http://controller:5000
+auth_type = password
+project_domain_name = default
+user_domain_name = default
+region_name = RegionOne
+project_name = service
+username = nova
+password = NOVA_PASS
 [oslo_concurrency]
 lock_path = /var/lib/neutron/tmp"
 
@@ -562,12 +646,10 @@ lock_path = /var/lib/neutron/tmp"
 [ml2]
 type_drivers = flat,vlan
 tenant_network_types =
-mechanism_drivers = linuxbridge,l2population
+mechanism_drivers = linuxbridge
 extension_drivers = port_security
 [ml2_type_flat]
 flat_networks = provider
-[ml2_type_vxlan]
-vni_ranges = 1:1000
 [securitygroup]
 enable_ipset = true"
 
@@ -578,19 +660,19 @@ physical_interface_mappings = provider:$PROVIDER_INTERFACE_NAME
 firewall_driver = neutron.agent.linux.iptables_firewall.IptablesFirewallDriver
 enable_security_group = true
 [vxlan]
-enable_vxlan = false
-
-#		genfile /etc/neutron/l3_agent.ini "\
-#[DEFAULT]
-#interface_driver = linuxbridge"
+enable_vxlan = false"
 
 		genfile /etc/neutron/dhcp_agent.ini "\
 [DEFAULT]
 interface_driver = linuxbridge
 dhcp_driver = neutron.agent.linux.dhcp.Dnsmasq
-enable_isolated_metadata = true
-dnsmasq_dns_servers = 8.8.8.8 $DNS_SERVERS"
+enable_isolated_metadata = true"
 	fi
+		genfile /etc/neutron/metadata_agent.ini "\
+[DEFAULT]
+nova_metadata_host = controller
+metadata_proxy_shared_secret = $METADATA_SECRET"
+
 
 	p_info "populating database"
 	su -s /bin/sh -c "neutron-db-manage --config-file /etc/neutron/neutron.conf --config-file /etc/neutron/plugins/ml2/ml2_conf.ini upgrade head" neutron
@@ -600,12 +682,11 @@ dnsmasq_dns_servers = 8.8.8.8 $DNS_SERVERS"
 	service neutron-server restart
 	service neutron-linuxbridge-agent restart
 	service neutron-dhcp-agent restart
-	service neutron-metadata-agent restart
+	#service neutron-metadata-agent restart
 
 fi
 
 p_info "Openstack Is Installed Succesfully \o/ \o/ \o/ .. "
-
 
 
 ## HORiZON INSTALL
@@ -622,9 +703,6 @@ if ((STEP <=14)); then
  sed -i 's/^TIME_ZONE = "UTC"/TIME_ZONE = "Europe\/Madrid"/' /etc/openstack-dashboard/local_settings.py
  sed -i -e '/identity/s/%s/%s:5000/' /etc/openstack-dashboard/local_settings.py
 
-
-genfile /etc/apache2/conf-available/openstack-dashboard.conf "\
-WSGIApplicationGroup %{GLOBAL}"
 
 p_info "reload web server with Horizon configuration"
 systemctl reload apache2.service
