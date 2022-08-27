@@ -159,6 +159,3 @@ service neutron-linuxbridge-agent restart
 fi
 
 echo "The Compute Node installation is completed!"
-echo "ready... press enter to reboot!!!"
-read
-reboot
