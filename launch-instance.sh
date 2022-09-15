@@ -16,6 +16,19 @@ openstack flavor create --id 0 --vcpus 1 --ram 64 --disk 1 m1.nano
 #openstack keypair create --public-key ~/.ssh/id_rsa.pub mykey
 #openstack keypair list
 
+## create self service network
+openstack network create selfservice
+## create a subnet on network
+openstack subnet create --network selfservice \
+  --dns-nameserver 8.8.4.4 --gateway 172.16.1.1 \
+  --subnet-range 172.16.1.0/24 selfservice
+#create router
+openstack router create router
+#Add the self-service network subnet as an interface on the router:
+openstack router add subnet router selfservice
+#Set a gateway on the provider network on the router
+openstack router set router --external-gateway provider
+
 openstack security group rule create --proto icmp default
 openstack security group rule create --proto tcp --dst-port 22 default
 
