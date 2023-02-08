@@ -39,5 +39,5 @@ $ ./openstack-install.sh
 Compute Node
 ```sh
 $ chmod 733 compute-install.sh
-$ ./compute-install.sh
+$ ./compute-install.sh compute_ip controller_ip
 ```
