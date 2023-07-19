@@ -1,6 +1,7 @@
 # Openstack Minimal Deployment
 
 This project includes automation scripts for a minimal deployment for OpenStack (Yoga release)
+
   => You can see the full installation in this demo: https://www.youtube.com/watch?v=bKgNCKeTBiQ&t=26s
   
 ## Introduction
@@ -17,7 +18,7 @@ The example architecture requires at least two nodes (hosts), the following mini
     - Controller Node: 1 processor, 4 GB memory, and 5 GB storage
 
     - Compute Node: 1 processor, 2 GB memory, and 10 GB storage
-(For first-time installation and testing purposes, many users select to build each host as a virtual machine (VM). The primary benefit of VMs is using One physical server that can support multiple nodes, each with almost any number of network interfaces.)
+(Note: for first-time installation and testing purposes, many users select to build each host as a virtual machine (VM). The primary benefit of VMs is using One physical server that can support multiple nodes, each with almost any number of network interfaces.)
 
 I- At Controller Node we install:
 
